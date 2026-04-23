@@ -1,26 +1,28 @@
 import os
+os.environ["TEST_MODE"] = "true"
+
 from fastapi.testclient import TestClient
 from api.main import app
-
-os.environ["TEST_MODE"] = "true"
 
 client = TestClient(app)
 
 
 def test_create_job():
-    res = client.post("/jobs")
-    assert res.status_code == 200
-    assert "job_id" in res.json()
+    response = client.post("/jobs")
+    assert response.status_code == 200
+    assert "job_id" in response.json()
 
 
 def test_get_job():
-    res = client.post("/jobs")
-    job_id = res.json()["job_id"]
+    response = client.post("/jobs")
+    job_id = response.json()["job_id"]
 
-    res2 = client.get(f"/jobs/{job_id}")
-    assert res2.status_code == 200
+    response = client.get(f"/jobs/{job_id}")
+    assert response.status_code == 200
+    assert response.json()["status"] == "queued"
 
 
 def test_invalid_job():
-    res = client.get("/jobs/invalid")
-    assert res.status_code in [200, 404]
+    response = client.get("/jobs/invalid-id")
+    assert response.status_code == 200
+    assert response.json()["error"] == "not found"

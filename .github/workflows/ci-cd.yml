@@ -12,36 +12,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install Python lint tools
+      - name: Install flake8
         run: pip install flake8
 
-      - name: Python Lint
+      - name: Run Python Lint
         run: flake8 api worker
 
-      - name: Install Node
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - name: ESLint (Frontend)
+      - name: Install frontend dependencies
         run: |
           cd frontend
           npm install
-          npm run lint || true
 
-      - name: Hadolint API
+      - name: Run ESLint
+        run: |
+          cd frontend
+          npx eslint . || true
+
+      - name: Run Hadolint (API)
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: api/Dockerfile
 
-      - name: Hadolint Frontend
+      - name: Run Hadolint (Frontend)
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: frontend/Dockerfile
@@ -52,9 +57,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -63,9 +69,8 @@ jobs:
         run: |
           pip install pytest pytest-cov fastapi httpx redis
 
-      - name: Run tests with coverage
-        run: |
-          pytest --cov=api --cov-report=xml
+      - name: Run tests
+        run: pytest --cov=api --cov-report=xml
 
       - name: Upload coverage
         uses: actions/upload-artifact@v4
@@ -86,29 +91,69 @@ jobs:
           - 5000:5000
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Build API image
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ================= API =================
+      - name: Build API image (cached)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./api
+          push: false
+          tags: api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Tag API image
         run: |
-          docker build -t api:${{ github.sha }} ./api
           docker tag api:${{ github.sha }} localhost:5000/api:${{ github.sha }}
           docker tag api:${{ github.sha }} localhost:5000/api:latest
+
+      - name: Push API image
+        run: |
           docker push localhost:5000/api:${{ github.sha }}
           docker push localhost:5000/api:latest
 
-      - name: Build Worker image
+      # ================= WORKER =================
+      - name: Build Worker image (cached)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./worker
+          push: false
+          tags: worker:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Tag Worker image
         run: |
-          docker build -t worker:${{ github.sha }} ./worker
           docker tag worker:${{ github.sha }} localhost:5000/worker:${{ github.sha }}
           docker tag worker:${{ github.sha }} localhost:5000/worker:latest
+
+      - name: Push Worker image
+        run: |
           docker push localhost:5000/worker:${{ github.sha }}
           docker push localhost:5000/worker:latest
 
-      - name: Build Frontend image
+      # ================= FRONTEND =================
+      - name: Build Frontend image (cached)
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: false
+          tags: frontend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Tag Frontend image
         run: |
-          docker build -t frontend:${{ github.sha }} ./frontend
           docker tag frontend:${{ github.sha }} localhost:5000/frontend:${{ github.sha }}
           docker tag frontend:${{ github.sha }} localhost:5000/frontend:latest
+
+      - name: Push Frontend image
+        run: |
           docker push localhost:5000/frontend:${{ github.sha }}
           docker push localhost:5000/frontend:latest
 
@@ -119,7 +164,8 @@ jobs:
     needs: build
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Scan API image
         uses: aquasecurity/trivy-action@0.24.0
@@ -141,7 +187,8 @@ jobs:
     needs: security
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Start stack
         run: docker compose up -d --build
@@ -149,13 +196,20 @@ jobs:
       - name: Wait for API
         run: sleep 15
 
-      - name: Create job
-        run: curl -X POST http://localhost:8000/jobs
+      - name: Install jq
+        run: sudo apt-get install -y jq
 
-      - name: Validate job
-        run: curl -f http://localhost:8000/jobs || exit 1
+      - name: Create and validate job
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:8000/jobs)
+          echo "Response: $RESPONSE"
 
-      - name: Cleanup
+          JOB_ID=$(echo $RESPONSE | jq -r '.job_id')
+          echo "Job ID: $JOB_ID"
+
+          curl -f http://localhost:8000/jobs/$JOB_ID
+
+      - name: Cleanup (always)
         if: always()
         run: docker compose down -v
 
@@ -167,13 +221,14 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Deploy stack
         run: docker compose up -d --build
 
       - name: Health check
-        run: curl -f http://localhost:8000/jobs || exit 1
+        run: curl -f http://localhost:8000/jobs
 
-      - name: Rolling update safety
+      - name: Final status
         run: echo "Deployment successful"

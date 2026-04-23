@@ -24,7 +24,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_HOST=redis
     networks:
       - app-network
     restart: unless-stopped
@@ -40,7 +40,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - REDIS_HOST=${REDIS_HOST}
+      - REDIS_HOST=redis
     networks:
       - app-network
     restart: unless-stopped
@@ -55,7 +55,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - api
+      api:
+        condition: service_started
     networks:
       - app-network
     restart: unless-stopped

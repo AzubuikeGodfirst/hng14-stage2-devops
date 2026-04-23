@@ -11,6 +11,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
 
   api:
     build: ./api
@@ -20,15 +21,17 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - REDIS_HOST=redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     networks:
       - app-network
     restart: unless-stopped
+
     deploy:
       resources:
         limits:
           cpus: "0.5"
-          memory: 256M
+          memory: 512M
 
   worker:
     build: ./worker
@@ -36,15 +39,18 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - REDIS_HOST=redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     networks:
       - app-network
     restart: unless-stopped
+
     deploy:
       resources:
         limits:
           cpus: "0.5"
-          memory: 256M
+          memory: 512M
 
 networks:
   app-network:
+    driver: bridge

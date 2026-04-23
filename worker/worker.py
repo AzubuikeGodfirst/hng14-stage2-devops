@@ -1,7 +1,7 @@
 import redis
 import time
 
-r = redis.Redis(host="localhost", port=6379)
+r = redis.Redis(host="redis", port=6379)
 
 
 def process_job(job_id):
